@@ -230,12 +230,15 @@ def apply_theme() -> None:
 
 
 def init_session_state() -> None:
+    # SECURITY: Credentials are NEVER pre-filled from server environment variables.
+    # Every visitor starts with empty credential fields and must enter their own keys.
+    # This prevents API keys from leaking across users/sessions/devices.
     defaults = {
         "theme": "dark",
-        "apify_token": os.getenv("APIFY_TOKEN", ""),
-        "groq_api_key": os.getenv("GROQ_API_KEY", ""),
-        "slack_webhook_url": os.getenv("SLACK_WEBHOOK_URL", ""),
-        "app_url": os.getenv("APP_URL", DEFAULT_APP_URL),
+        "apify_token": "",
+        "groq_api_key": "",
+        "slack_webhook_url": "",
+        "app_url": DEFAULT_APP_URL,
         "campaign_name": "",
         "industry": "",
         "campaign_goal": "",
@@ -243,7 +246,7 @@ def init_session_state() -> None:
         "country_search": "",
         "titles_text": "CEO, Founder, VP of Sales",
         "outreach_angle": "",
-        "client_email": os.getenv("CLIENT_EMAIL", ""),
+        "client_email": "",
         "email_provider": "Gmail",
         "sender_email": "",
         "email_password": "",
