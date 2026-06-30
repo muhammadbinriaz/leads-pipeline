@@ -52,6 +52,8 @@ def main():
         print(f"\n💾 Spreadsheet created successfully: {result.csv_path}")
     if result.slack_sent:
         print("✅ Slack alert sent.")
+    if result.email_sent:
+        print("✅ Client email sent.")
     for warning in result.warnings:
         print(f"⚠️ {warning}")
 

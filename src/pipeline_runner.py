@@ -6,8 +6,8 @@ from typing import Callable, Optional
 from src.scraper import scrape_leads
 from src.verifier import verify_lead_email
 from src.enricher import process_lead_with_ai, reset_llm_cache
-from src.exporter import export_leads_to_csv
-from src.integrations import send_slack_completion_alert
+from src.integrations import send_slack_completion_alert, send_client_completion_email
+from src.exporter import export_leads_to_csv, leads_to_csv_bytes
 
 
 ProgressCallback = Callable[[str, str, int, int], None]
@@ -21,9 +21,17 @@ class PipelineConfig:
     output_dir: str = "output"
     skip_verification: bool = False
     skip_slack: bool = False
+    skip_client_email: bool = False
     apify_token: Optional[str] = None
     groq_api_key: Optional[str] = None
     slack_webhook_url: Optional[str] = None
+    app_url: Optional[str] = None
+    client_email: Optional[str] = None
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = None
+    smtp_user: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_from: Optional[str] = None
 
 
 @dataclass
@@ -33,6 +41,8 @@ class PipelineResult:
     total_leads: int = 0
     valid_leads: int = 0
     slack_sent: bool = False
+    email_sent: bool = False
+    csv_filename: Optional[str] = None
     warnings: list[str] = field(default_factory=list)
 
 
@@ -110,8 +120,11 @@ def run_pipeline(
 
     _notify(on_progress, "export", "Saving CSV export...")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    csv_bytes: Optional[bytes] = None
     try:
         result.csv_path = export_leads_to_csv(result.processed_leads, config.output_dir, config.country, timestamp)
+        result.csv_filename = os.path.basename(result.csv_path)
+        csv_bytes = leads_to_csv_bytes(result.processed_leads)
     except Exception as e:
         result.warnings.append(f"CSV export failed: {e}")
 
@@ -123,10 +136,34 @@ def run_pipeline(
                 titles=config.titles,
                 total_leads=result.total_leads,
                 valid_leads=result.valid_leads,
+                app_url=config.app_url,
+                csv_filename=result.csv_filename,
             )
             result.slack_sent = True
         except Exception as e:
             result.warnings.append(f"Slack alert failed: {e}")
+
+    if not config.skip_client_email and config.client_email and csv_bytes and result.csv_filename:
+        _notify(on_progress, "email", f"Sending completion email to {config.client_email}...")
+        try:
+            send_client_completion_email(
+                to_email=config.client_email,
+                country=config.country,
+                titles=config.titles,
+                total_leads=result.total_leads,
+                valid_leads=result.valid_leads,
+                csv_bytes=csv_bytes,
+                csv_filename=result.csv_filename,
+                app_url=config.app_url,
+                smtp_host=config.smtp_host,
+                smtp_port=config.smtp_port,
+                smtp_user=config.smtp_user,
+                smtp_password=config.smtp_password,
+                smtp_from=config.smtp_from,
+            )
+            result.email_sent = True
+        except Exception as e:
+            result.warnings.append(f"Client email failed: {e}")
 
     _notify(on_progress, "done", "Pipeline complete.", result.total_leads, result.total_leads)
     return result
