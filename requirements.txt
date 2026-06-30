@@ -1,0 +1,9 @@
+langchain-groq
+python-dotenv
+pydantic
+apify-client
+email-validator
+tabulate
+requests
+streamlit
+pandas
