@@ -2,7 +2,6 @@ import os
 import re
 import csv
 import io
-from tabulate import tabulate
 
 CSV_HEADERS = [
     "Full Name", "Email", "Verification Status", "Title",
@@ -42,6 +41,8 @@ def print_terminal_summary(processed_leads: list[dict]):
     """
     Generates a visual summary grid table in the console using tabulate.
     """
+    from tabulate import tabulate
+
     summary_data = []
     for lead in processed_leads:
         icebreaker = lead["AI Icebreaker"]

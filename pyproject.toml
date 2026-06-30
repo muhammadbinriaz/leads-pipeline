@@ -3,7 +3,7 @@ name = "ai-lead-pipeline"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
     "apify-client>=3.0.4",
     "langchain-groq>=1.1.3",
