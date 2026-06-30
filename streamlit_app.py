@@ -74,7 +74,7 @@ def render_sidebar() -> dict:
         "Slack Webhook URL (optional)",
         value=st.session_state.slack_webhook_url,
         type="password",
-        help="Get notified in Slack when a run completes.",
+        help="Posts a completion alert to YOUR Slack channel — not to the scraped leads.",
     )
 
     st.session_state.apify_token = apify_token
@@ -82,6 +82,12 @@ def render_sidebar() -> dict:
     st.session_state.slack_webhook_url = slack_webhook_url
 
     st.sidebar.markdown("---")
+    st.sidebar.markdown("### ℹ️ How notifications work")
+    st.sidebar.caption(
+        "**Email verification** checks each lead's address (format + mail server). "
+        "It does **not** send emails to anyone.\n\n"
+        "**Slack** sends one summary message to the channel tied to your webhook when a run finishes."
+    )
     st.sidebar.markdown("### 💡 Cost tip")
     st.sidebar.info("Start with limit **1–3** leads when testing to save Apify credits.")
 
@@ -117,14 +123,38 @@ def render_campaign_form() -> dict:
         )
 
     with col2:
-        limit = st.slider("Lead Limit", min_value=1, max_value=100, value=5, step=1)
-        skip_verification = st.checkbox("Skip email verification", value=False)
-        skip_slack = st.checkbox("Skip Slack notification", value=False)
+        limit_mode = st.radio(
+            "Lead limit mode",
+            ["Quick select (slider)", "Custom number"],
+            horizontal=True,
+        )
+        if limit_mode == "Quick select (slider)":
+            limit = st.slider("Lead Limit", min_value=1, max_value=100, value=5, step=1)
+        else:
+            limit = st.number_input(
+                "Custom Lead Limit",
+                min_value=1,
+                max_value=5000,
+                value=100,
+                step=1,
+                help="Use for larger campaigns. Higher limits use more Apify credits.",
+            )
+
+        skip_verification = st.checkbox(
+            "Skip email verification",
+            value=False,
+            help="When enabled, emails are not checked for valid format or mail server (MX).",
+        )
+        skip_slack = st.checkbox(
+            "Skip Slack notification",
+            value=False,
+            help="When enabled, no completion message is sent to Slack.",
+        )
 
     return {
         "country": country,
         "titles": [t.strip() for t in titles.split(",") if t.strip()],
-        "limit": limit,
+        "limit": int(limit),
         "skip_verification": skip_verification,
         "skip_slack": skip_slack,
     }
@@ -135,7 +165,7 @@ def render_results(result) -> None:
 
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Total Leads", result.total_leads)
-    m2.metric("Verified Emails", result.valid_leads)
+    m2.metric("Valid Emails", result.valid_leads, help="Leads that passed email verification (or all if verification was skipped).")
     m3.metric("Slack Sent", "Yes" if result.slack_sent else "No")
     m4.metric("CSV Saved", "Yes" if result.csv_path else "No")
 
