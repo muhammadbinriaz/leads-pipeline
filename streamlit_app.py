@@ -25,8 +25,19 @@ BRANDING_HIDE_CSS = """
 <style>
     #MainMenu, footer { visibility: hidden; }
     [data-testid="stHeader"] { background-color: rgba(0, 0, 0, 0) !important; }
-    .stAppDeployButton, [data-testid="stToolbar"], [data-testid="stStatusWidget"] { display: none; }
+    .stAppDeployButton, [data-testid="stStatusWidget"] { display: none; }
     a[href*="github.com"], .viewerBadge_container__r5tak { display: none !important; }
+
+    /* Always keep the collapsed sidebar reopen button visible */
+    [data-testid="collapsedControl"],
+    [data-testid="stSidebarCollapsedControl"],
+    [data-testid="stSidebarCollapsedControl"] button,
+    button[data-testid="collapsedControl"] {
+        display: flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+    }
 </style>
 """
 
