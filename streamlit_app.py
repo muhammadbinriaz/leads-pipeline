@@ -5,6 +5,8 @@ import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
+from src.campaign_suggestions import suggest_campaign_targeting
+from src.constants import COUNTRIES, EMAIL_PROVIDERS
 from src.exporter import leads_to_csv_bytes
 from src.pipeline_runner import PipelineConfig, run_pipeline
 
@@ -13,55 +15,62 @@ load_dotenv()
 DEFAULT_APP_URL = "https://leads-pipeline-8oblh2wh9zf7frv8jyhfyp.streamlit.app/"
 
 st.set_page_config(
-    page_title="AI Lead Pipeline",
-    page_icon="🚀",
+    page_title="Lead Pipeline",
+    page_icon="LP",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 BRANDING_HIDE_CSS = """
 <style>
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    .stAppDeployButton {display: none;}
-    [data-testid="stToolbar"] {display: none;}
-    [data-testid="stStatusWidget"] {display: none;}
-    a[href*="github.com"] {display: none !important;}
-    .viewerBadge_container__r5tak {display: none !important;}
-    .viewerBadge_link__qRIco {display: none !important;}
+    #MainMenu, footer, header { visibility: hidden; }
+    .stAppDeployButton, [data-testid="stToolbar"], [data-testid="stStatusWidget"] { display: none; }
+    a[href*="github.com"], .viewerBadge_container__r5tak { display: none !important; }
 </style>
 """
 
-THEME_CSS = {
-    "dark": """
-    <style>
-        .stApp { background-color: #0f172a; color: #f8fafc; }
-        [data-testid="stAppViewContainer"] { background-color: #0f172a; }
-        [data-testid="stSidebar"] { background-color: #0b1220; }
-        .main-header { font-size: 2.2rem; font-weight: 700; margin-bottom: 0.25rem; color: #f8fafc; }
-        .sub-header { color: #94a3b8; margin-bottom: 1.5rem; }
-        [data-testid="stMetricValue"] { color: #f8fafc; }
-    </style>
-    """,
-    "light": """
-    <style>
-        .stApp { background-color: #f8fafc; color: #0f172a; }
-        [data-testid="stAppViewContainer"] { background-color: #f8fafc; }
-        [data-testid="stSidebar"] { background-color: #ffffff; border-right: 1px solid #e2e8f0; }
-        .main-header { font-size: 2.2rem; font-weight: 700; margin-bottom: 0.25rem; color: #0f172a; }
-        .sub-header { color: #475569; margin-bottom: 1.5rem; }
-        [data-testid="stMetricValue"] { color: #0f172a; }
-        [data-testid="stMetricLabel"] { color: #475569; }
-    </style>
-    """,
-}
+LIGHT_THEME_CSS = """
+<style>
+    .stApp { background-color: #f1f5f9 !important; }
+    [data-testid="stAppViewContainer"] { background-color: #f1f5f9 !important; }
+    [data-testid="stSidebar"] { background-color: #ffffff !important; border-right: 1px solid #e2e8f0; }
+    [data-testid="stSidebar"] * { color: #1e293b !important; }
+    .stApp, .stApp p, .stApp label, .stApp span, .stApp h1, .stApp h2, .stApp h3,
+    .stApp h4, .stApp h5, .stApp h6, .stMarkdown, .stMarkdown p,
+    [data-testid="stWidgetLabel"] p, [data-testid="stMarkdownContainer"] p,
+    [data-testid="stCaptionContainer"] p, [data-testid="stMetricLabel"] p,
+    [data-testid="stMetricValue"] { color: #0f172a !important; }
+    [data-testid="stMetricValue"] { color: #0f172a !important; }
+    .page-title { font-size: 1.75rem; font-weight: 700; color: #0f172a !important; margin: 0; }
+    .page-subtitle { color: #475569 !important; margin-top: 0.25rem; margin-bottom: 1.25rem; }
+    .section-label { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em;
+        text-transform: uppercase; color: #64748b !important; margin-bottom: 0.5rem; }
+    div[data-baseweb="input"] input, div[data-baseweb="textarea"] textarea,
+    div[data-baseweb="select"] > div { background-color: #ffffff !important; color: #0f172a !important; }
+    [data-testid="stExpander"] summary p { color: #0f172a !important; }
+</style>
+"""
+
+DARK_THEME_CSS = """
+<style>
+    .stApp { background-color: #0f172a !important; }
+    [data-testid="stAppViewContainer"] { background-color: #0f172a !important; }
+    [data-testid="stSidebar"] { background-color: #0b1220 !important; }
+    .stApp, .stApp p, .stApp label, .stApp span, .stMarkdown p,
+    [data-testid="stWidgetLabel"] p, [data-testid="stMetricValue"],
+    [data-testid="stMetricLabel"] p { color: #e2e8f0 !important; }
+    .page-title { font-size: 1.75rem; font-weight: 700; color: #f8fafc !important; margin: 0; }
+    .page-subtitle { color: #94a3b8 !important; margin-top: 0.25rem; margin-bottom: 1.25rem; }
+    .section-label { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em;
+        text-transform: uppercase; color: #64748b !important; margin-bottom: 0.5rem; }
+</style>
+"""
 
 
 def apply_theme() -> None:
-    theme = st.session_state.get("theme", "dark")
     st.markdown(BRANDING_HIDE_CSS, unsafe_allow_html=True)
-    st.markdown(THEME_CSS.get(theme, THEME_CSS["dark"]), unsafe_allow_html=True)
+    css = LIGHT_THEME_CSS if st.session_state.get("theme") == "light" else DARK_THEME_CSS
+    st.markdown(css, unsafe_allow_html=True)
 
 
 def init_session_state() -> None:
@@ -71,165 +80,246 @@ def init_session_state() -> None:
         "groq_api_key": os.getenv("GROQ_API_KEY", ""),
         "slack_webhook_url": os.getenv("SLACK_WEBHOOK_URL", ""),
         "app_url": os.getenv("APP_URL", DEFAULT_APP_URL),
+        "campaign_name": "",
+        "industry": "",
+        "campaign_goal": "",
+        "country": "United States",
+        "country_search": "",
+        "titles_text": "CEO, Founder, VP of Sales",
+        "outreach_angle": "",
         "client_email": os.getenv("CLIENT_EMAIL", ""),
-        "use_sendgrid": False,
-        "smtp_host": os.getenv("SMTP_HOST", ""),
-        "smtp_port": int(os.getenv("SMTP_PORT", "587")),
-        "smtp_user": os.getenv("SMTP_USER", ""),
-        "smtp_password": os.getenv("SMTP_PASSWORD", ""),
-        "smtp_from": os.getenv("SMTP_FROM", ""),
+        "email_provider": "Gmail",
+        "sender_email": "",
+        "email_password": "",
         "last_result": None,
+        "suggested_limit": 10,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
 
 
+def resolve_smtp_settings(provider: str, sender_email: str, email_password: str) -> dict:
+    cfg = EMAIL_PROVIDERS[provider]
+    username = cfg.get("fixed_username") or sender_email.strip()
+    return {
+        "smtp_host": cfg["host"],
+        "smtp_port": cfg["port"],
+        "smtp_user": username,
+        "smtp_password": email_password.strip(),
+        "smtp_from": sender_email.strip(),
+    }
+
+
 def render_header() -> None:
-    col_title, col_theme = st.columns([5, 1])
-    with col_title:
-        st.markdown('<p class="main-header">🚀 AI Lead Generation Pipeline</p>', unsafe_allow_html=True)
+    left, right = st.columns([6, 1])
+    with left:
+        st.markdown('<p class="page-title">Lead Generation Pipeline</p>', unsafe_allow_html=True)
         st.markdown(
-            '<p class="sub-header">Scrape, verify, enrich, and export B2B leads — no terminal required.</p>',
+            '<p class="page-subtitle">Scrape, verify, enrich, and deliver B2B lead lists.</p>',
             unsafe_allow_html=True,
         )
-    with col_theme:
-        label = "☀️ Light" if st.session_state.theme == "dark" else "🌙 Dark"
+    with right:
+        label = "Light mode" if st.session_state.theme == "dark" else "Dark mode"
         if st.button(label, use_container_width=True, key="theme_toggle"):
             st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
             st.rerun()
 
 
 def render_sidebar() -> dict:
-    st.sidebar.markdown("## 🔐 API Credentials")
-    st.sidebar.caption("Keys stay in your browser session only. They are not saved to disk.")
+    st.sidebar.markdown('<p class="section-label">API credentials</p>', unsafe_allow_html=True)
+    st.sidebar.caption("Stored in your browser session only.")
 
-    apify_token = st.sidebar.text_input("Apify Token", value=st.session_state.apify_token, type="password")
-    groq_api_key = st.sidebar.text_input("Groq API Key", value=st.session_state.groq_api_key, type="password")
-
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("## 🔔 Notifications")
-
-    app_url = st.sidebar.text_input(
-        "Dashboard URL (for Slack link)",
-        value=st.session_state.app_url,
-        help="Included in Slack alerts so your team can open the app and download CSV.",
-    )
-    slack_webhook_url = st.sidebar.text_input(
-        "Slack Webhook URL (optional)",
-        value=st.session_state.slack_webhook_url,
-        type="password",
-        help="Posts a completion alert with a dashboard link to your Slack channel.",
-    )
-
-    client_email = st.sidebar.text_input(
-        "Client email (optional)",
-        value=st.session_state.client_email,
-        help="Receives a summary email with the CSV attached when a run completes.",
-    )
-
-    use_sendgrid = st.sidebar.checkbox(
-        "Use SendGrid SMTP preset",
-        value=st.session_state.use_sendgrid,
-        help="Sets host to smtp.sendgrid.net and username to apikey. Paste your SendGrid API key as SMTP password.",
-    )
-
-    if use_sendgrid:
-        smtp_host = "smtp.sendgrid.net"
-        smtp_port = 587
-        smtp_user = "apikey"
-        smtp_password = st.sidebar.text_input("SendGrid API Key", value=st.session_state.smtp_password, type="password")
-        smtp_from = st.sidebar.text_input("From email (verified in SendGrid)", value=st.session_state.smtp_from)
-    else:
-        smtp_host = st.sidebar.text_input("SMTP Host", value=st.session_state.smtp_host or "smtp.gmail.com")
-        smtp_port = st.sidebar.number_input("SMTP Port", min_value=1, max_value=65535, value=st.session_state.smtp_port)
-        smtp_user = st.sidebar.text_input("SMTP Username", value=st.session_state.smtp_user)
-        smtp_password = st.sidebar.text_input("SMTP Password", value=st.session_state.smtp_password, type="password")
-        smtp_from = st.sidebar.text_input("From email", value=st.session_state.smtp_from or st.session_state.smtp_user)
+    apify_token = st.sidebar.text_input("Apify token", value=st.session_state.apify_token, type="password")
+    groq_api_key = st.sidebar.text_input("Groq API key", value=st.session_state.groq_api_key, type="password")
 
     st.session_state.apify_token = apify_token
     st.session_state.groq_api_key = groq_api_key
-    st.session_state.slack_webhook_url = slack_webhook_url
-    st.session_state.app_url = app_url
-    st.session_state.client_email = client_email
-    st.session_state.use_sendgrid = use_sendgrid
-    st.session_state.smtp_host = smtp_host
-    st.session_state.smtp_port = int(smtp_port)
-    st.session_state.smtp_user = smtp_user
-    st.session_state.smtp_password = smtp_password
-    st.session_state.smtp_from = smtp_from
 
     st.sidebar.markdown("---")
-    st.sidebar.caption(
-        "**Lead email verification** checks scraped addresses (format + mail server). "
-        "It does not email leads.\n\n"
-        "**Client email** sends the finished CSV to the address above.\n\n"
-        "**Slack** alerts your team with stats + dashboard link."
-    )
-    st.sidebar.info("Start with limit **1–3** when testing to save Apify credits.")
+    st.sidebar.caption("Use a low lead limit (1–3) when testing to control Apify spend.")
 
     return {
         "apify_token": apify_token.strip(),
         "groq_api_key": groq_api_key.strip(),
-        "slack_webhook_url": slack_webhook_url.strip(),
-        "app_url": app_url.strip() or None,
-        "client_email": client_email.strip() or None,
-        "smtp_host": smtp_host.strip() or None,
-        "smtp_port": int(smtp_port),
-        "smtp_user": smtp_user.strip() or None,
-        "smtp_password": smtp_password.strip() or None,
-        "smtp_from": smtp_from.strip() or None,
     }
 
 
-def render_campaign_form() -> dict:
-    col1, col2 = st.columns(2)
+def render_campaign_tab(credentials: dict) -> dict:
+    st.markdown('<p class="section-label">Campaign details</p>', unsafe_allow_html=True)
 
-    with col1:
-        country = st.selectbox(
-            "Target Country",
-            ["United States", "United Kingdom", "Canada", "Australia", "Germany", "France", "India", "Pakistan"],
-            index=0,
+    c1, c2 = st.columns(2)
+    with c1:
+        campaign_name = st.text_input(
+            "Campaign name",
+            value=st.session_state.campaign_name,
+            placeholder="e.g. US SaaS Founders Q2",
         )
-        titles = st.text_input("Target Job Titles", value="CEO, Founder, VP of Sales")
+        industry = st.text_input(
+            "Industry / niche",
+            value=st.session_state.industry,
+            placeholder="e.g. B2B SaaS, Real Estate, E-commerce",
+        )
+        campaign_goal = st.text_area(
+            "Campaign goal (optional)",
+            value=st.session_state.campaign_goal,
+            placeholder="e.g. Outreach list for cold email to marketing leaders",
+            height=80,
+        )
 
-    with col2:
-        limit_mode = st.radio("Lead limit mode", ["Quick select (slider)", "Custom number"], horizontal=True)
-        if limit_mode == "Quick select (slider)":
-            limit = st.slider("Lead Limit", min_value=1, max_value=100, value=5, step=1)
+    with c2:
+        country_search = st.text_input("Search country", value=st.session_state.country_search, placeholder="Type to filter...")
+        filtered = [c for c in COUNTRIES if country_search.lower() in c.lower()] if country_search else COUNTRIES
+        default_idx = filtered.index(st.session_state.country) if st.session_state.country in filtered else 0
+        country = st.selectbox("Target country", filtered, index=default_idx)
+        outreach_angle = st.text_area(
+            "Outreach angle (optional)",
+            value=st.session_state.outreach_angle,
+            placeholder="AI can suggest this, or write your own positioning.",
+            height=80,
+        )
+
+    st.markdown('<p class="section-label">Targeting</p>', unsafe_allow_html=True)
+    col_titles, col_ai = st.columns([4, 1])
+    with col_titles:
+        titles_text = st.text_area(
+            "Job titles (comma-separated)",
+            value=st.session_state.titles_text,
+            height=100,
+            placeholder="CEO, Founder, Head of Marketing",
+        )
+    with col_ai:
+        st.write("")
+        st.write("")
+        ai_disabled = not credentials["groq_api_key"] or not industry.strip()
+        if st.button("AI suggest", use_container_width=True, disabled=ai_disabled, help="Requires Groq key and industry"):
+            try:
+                with st.spinner("Generating suggestions..."):
+                    suggestions = suggest_campaign_targeting(
+                        groq_api_key=credentials["groq_api_key"],
+                        industry=industry,
+                        country=country,
+                        campaign_goal=campaign_goal,
+                    )
+                st.session_state.titles_text = ", ".join(suggestions.job_titles)
+                st.session_state.outreach_angle = suggestions.outreach_angle
+                st.session_state.suggested_limit = suggestions.recommended_limit
+                st.success("Suggestions applied.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Suggestion failed: {e}")
+        if ai_disabled:
+            st.caption("Add Groq key + industry to enable.")
+
+    st.markdown('<p class="section-label">Volume</p>', unsafe_allow_html=True)
+    v1, v2 = st.columns(2)
+    with v1:
+        limit_mode = st.radio("Limit type", ["Preset", "Custom"], horizontal=True, label_visibility="collapsed")
+        if limit_mode == "Preset":
+            limit = st.select_slider(
+                "Lead count",
+                options=[1, 3, 5, 10, 25, 50, 100],
+                value=min(st.session_state.suggested_limit, 100),
+            )
         else:
-            limit = st.number_input("Custom Lead Limit", min_value=1, max_value=5000, value=100, step=1)
-
+            limit = st.number_input("Custom lead count", min_value=1, max_value=5000, value=100)
+    with v2:
         skip_verification = st.checkbox("Skip email verification", value=False)
-        skip_slack = st.checkbox("Skip Slack notification", value=False)
-        skip_client_email = st.checkbox("Skip client email", value=False)
+        st.caption("Verification checks format and mail server — it does not send emails to leads.")
+
+    st.session_state.campaign_name = campaign_name
+    st.session_state.industry = industry
+    st.session_state.campaign_goal = campaign_goal
+    st.session_state.country = country
+    st.session_state.country_search = country_search
+    st.session_state.titles_text = titles_text
+    st.session_state.outreach_angle = outreach_angle
 
     return {
+        "campaign_name": campaign_name.strip(),
         "country": country,
-        "titles": [t.strip() for t in titles.split(",") if t.strip()],
+        "titles": [t.strip() for t in titles_text.split(",") if t.strip()],
         "limit": int(limit),
         "skip_verification": skip_verification,
-        "skip_slack": skip_slack,
+    }
+
+
+def render_delivery_tab() -> dict:
+    st.markdown('<p class="section-label">Client delivery</p>', unsafe_allow_html=True)
+
+    d1, d2 = st.columns(2)
+    with d1:
+        client_email = st.text_input(
+            "Send results to (client email)",
+            value=st.session_state.client_email,
+            placeholder="client@company.com",
+        )
+        skip_client_email = st.checkbox("Do not email client", value=False)
+        email_provider = st.selectbox(
+            "Your email provider",
+            list(EMAIL_PROVIDERS.keys()),
+            index=list(EMAIL_PROVIDERS.keys()).index(st.session_state.email_provider),
+        )
+        provider_cfg = EMAIL_PROVIDERS[email_provider]
+        if provider_cfg.get("use_email_as_username", True):
+            sender_email = st.text_input("Your email address", value=st.session_state.sender_email, placeholder="you@gmail.com")
+        else:
+            sender_email = st.text_input("From email (verified sender)", value=st.session_state.sender_email)
+        email_password = st.text_input(
+            provider_cfg["password_hint"],
+            value=st.session_state.email_password,
+            type="password",
+        )
+        st.caption(provider_cfg["password_help"])
+
+    with d2:
+        st.markdown('<p class="section-label">Team alerts</p>', unsafe_allow_html=True)
+        slack_webhook_url = st.text_input(
+            "Slack webhook URL (optional)",
+            value=st.session_state.slack_webhook_url,
+            type="password",
+            help="Posts a summary with dashboard link to your Slack channel.",
+        )
+        skip_slack = st.checkbox("Do not send Slack alert", value=False)
+        app_url = st.text_input("Dashboard URL (for Slack link)", value=st.session_state.app_url)
+
+    st.session_state.client_email = client_email
+    st.session_state.email_provider = email_provider
+    st.session_state.sender_email = sender_email
+    st.session_state.email_password = email_password
+    st.session_state.slack_webhook_url = slack_webhook_url
+    st.session_state.app_url = app_url
+
+    smtp = {}
+    if not skip_client_email and client_email.strip() and sender_email.strip() and email_password.strip():
+        smtp = resolve_smtp_settings(email_provider, sender_email, email_password)
+
+    return {
+        "client_email": client_email.strip() or None,
         "skip_client_email": skip_client_email,
+        "skip_slack": skip_slack,
+        "slack_webhook_url": slack_webhook_url.strip(),
+        "app_url": app_url.strip() or None,
+        **smtp,
     }
 
 
 def render_results(result) -> None:
-    st.markdown("### 📊 Campaign Results")
+    st.markdown('<p class="section-label">Run summary</p>', unsafe_allow_html=True)
 
     m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("Total Leads", result.total_leads)
-    m2.metric("Valid Emails", result.valid_leads)
-    m3.metric("Slack Sent", "Yes" if result.slack_sent else "No")
-    m4.metric("Email Sent", "Yes" if result.email_sent else "No")
-    m5.metric("CSV Ready", "Yes" if result.csv_filename else "No")
+    m1.metric("Total leads", result.total_leads)
+    m2.metric("Valid emails", result.valid_leads)
+    m3.metric("Slack", "Sent" if result.slack_sent else "—")
+    m4.metric("Client email", "Sent" if result.email_sent else "—")
+    m5.metric("Export", "Ready" if result.csv_filename else "—")
 
     if result.warnings:
         for warning in result.warnings:
             st.warning(warning)
 
     if not result.processed_leads:
-        st.info("No leads were returned for this run.")
+        st.info("No leads returned for this run.")
         return
 
     display_df = pd.DataFrame(result.processed_leads).drop(columns=["Is Valid Email"], errors="ignore")
@@ -237,7 +327,7 @@ def render_results(result) -> None:
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     st.download_button(
-        label="⬇️ Download CSV",
+        label="Download CSV",
         data=leads_to_csv_bytes(result.processed_leads),
         file_name=f"campaign_leads_{timestamp}.csv",
         mime="text/csv",
@@ -251,31 +341,38 @@ def main() -> None:
     credentials = render_sidebar()
     render_header()
 
-    campaign = render_campaign_form()
-    st.markdown("---")
+    tab_campaign, tab_delivery, tab_results = st.tabs(["Campaign", "Delivery", "Results"])
 
-    if st.button("▶️ Run Pipeline", type="primary", use_container_width=True):
+    with tab_campaign:
+        campaign = render_campaign_tab(credentials)
+    with tab_delivery:
+        delivery = render_delivery_tab()
+
+    st.markdown("---")
+    run_clicked = st.button("Run campaign", type="primary", use_container_width=True)
+
+    if run_clicked:
         if not credentials["apify_token"] or not credentials["groq_api_key"]:
-            st.error("Please enter both Apify Token and Groq API Key in the sidebar.")
+            st.error("Apify token and Groq API key are required in the sidebar.")
             return
         if not campaign["titles"]:
-            st.error("Please enter at least one job title.")
+            st.error("Enter at least one job title.")
             return
         if (
-            not campaign["skip_client_email"]
-            and credentials["client_email"]
-            and not all([credentials["smtp_host"], credentials["smtp_user"], credentials["smtp_password"], credentials["smtp_from"]])
+            not delivery["skip_client_email"]
+            and delivery["client_email"]
+            and not delivery.get("smtp_host")
         ):
-            st.error("Client email is set but SMTP settings are incomplete. Fill SMTP fields or check Skip client email.")
+            st.error("Client email is set. Complete your email provider settings in the Delivery tab.")
             return
 
-        progress_bar = st.progress(0, text="Starting pipeline...")
+        progress_bar = st.progress(0, text="Starting...")
         log_area = st.empty()
         logs: list[str] = []
 
         def on_progress(step, message, current=0, total=0):
             logs.append(message)
-            log_area.code("\n".join(logs[-12:]), language=None)
+            log_area.code("\n".join(logs[-14:]), language=None)
             if total > 0:
                 progress_bar.progress(min(current / total, 1.0), text=message)
             else:
@@ -286,33 +383,36 @@ def main() -> None:
             titles=campaign["titles"],
             limit=campaign["limit"],
             skip_verification=campaign["skip_verification"],
-            skip_slack=campaign["skip_slack"] or not credentials["slack_webhook_url"],
-            skip_client_email=campaign["skip_client_email"] or not credentials["client_email"],
+            skip_slack=delivery["skip_slack"] or not delivery["slack_webhook_url"],
+            skip_client_email=delivery["skip_client_email"] or not delivery["client_email"],
             apify_token=credentials["apify_token"],
             groq_api_key=credentials["groq_api_key"],
-            slack_webhook_url=credentials["slack_webhook_url"] or None,
-            app_url=credentials["app_url"],
-            client_email=credentials["client_email"],
-            smtp_host=credentials["smtp_host"],
-            smtp_port=credentials["smtp_port"],
-            smtp_user=credentials["smtp_user"],
-            smtp_password=credentials["smtp_password"],
-            smtp_from=credentials["smtp_from"],
+            slack_webhook_url=delivery["slack_webhook_url"] or None,
+            app_url=delivery["app_url"],
+            client_email=delivery["client_email"],
+            smtp_host=delivery.get("smtp_host"),
+            smtp_port=delivery.get("smtp_port"),
+            smtp_user=delivery.get("smtp_user"),
+            smtp_password=delivery.get("smtp_password"),
+            smtp_from=delivery.get("smtp_from"),
         )
 
         try:
-            with st.spinner("Running pipeline... this may take a few minutes."):
+            with st.spinner("Processing campaign..."):
                 result = run_pipeline(config, on_progress=on_progress)
             st.session_state.last_result = result
-            progress_bar.progress(1.0, text="Pipeline complete!")
-            st.success("Campaign finished successfully.")
+            progress_bar.progress(1.0, text="Complete")
+            st.success("Campaign completed.")
         except Exception as e:
             progress_bar.empty()
-            st.error(f"Pipeline failed: {e}")
+            st.error(f"Campaign failed: {e}")
             return
 
-    if st.session_state.last_result:
-        render_results(st.session_state.last_result)
+    with tab_results:
+        if st.session_state.last_result:
+            render_results(st.session_state.last_result)
+        else:
+            st.info("Results will appear here after you run a campaign.")
 
 
 if __name__ == "__main__":
