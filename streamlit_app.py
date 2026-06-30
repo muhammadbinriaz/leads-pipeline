@@ -23,7 +23,8 @@ st.set_page_config(
 
 BRANDING_HIDE_CSS = """
 <style>
-    #MainMenu, footer, header { visibility: hidden; }
+    #MainMenu, footer { visibility: hidden; }
+    [data-testid="stHeader"] { background-color: rgba(0, 0, 0, 0) !important; }
     .stAppDeployButton, [data-testid="stToolbar"], [data-testid="stStatusWidget"] { display: none; }
     a[href*="github.com"], .viewerBadge_container__r5tak { display: none !important; }
 </style>
@@ -31,23 +32,167 @@ BRANDING_HIDE_CSS = """
 
 LIGHT_THEME_CSS = """
 <style>
+    /* Main app and container backgrounds */
     .stApp { background-color: #f1f5f9 !important; }
     [data-testid="stAppViewContainer"] { background-color: #f1f5f9 !important; }
+    
+    /* Sidebar background and borders */
     [data-testid="stSidebar"] { background-color: #ffffff !important; border-right: 1px solid #e2e8f0; }
-    [data-testid="stSidebar"] * { color: #1e293b !important; }
+    
+    /* Text colors - general */
     .stApp, .stApp p, .stApp label, .stApp span, .stApp h1, .stApp h2, .stApp h3,
     .stApp h4, .stApp h5, .stApp h6, .stMarkdown, .stMarkdown p,
     [data-testid="stWidgetLabel"] p, [data-testid="stMarkdownContainer"] p,
     [data-testid="stCaptionContainer"] p, [data-testid="stMetricLabel"] p,
     [data-testid="stMetricValue"] { color: #0f172a !important; }
-    [data-testid="stMetricValue"] { color: #0f172a !important; }
+    
+    /* Sidebar text colors specifically */
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+    [data-testid="stSidebar"] label,
+    [data-testid="stSidebar"] p,
+    [data-testid="stSidebar"] span,
+    [data-testid="stSidebar"] caption,
+    [data-testid="stSidebar"] small,
+    [data-testid="stSidebar"] .section-label {
+        color: #1e293b !important;
+    }
+    
     .page-title { font-size: 1.75rem; font-weight: 700; color: #0f172a !important; margin: 0; }
     .page-subtitle { color: #475569 !important; margin-top: 0.25rem; margin-bottom: 1.25rem; }
     .section-label { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em;
         text-transform: uppercase; color: #64748b !important; margin-bottom: 0.5rem; }
-    div[data-baseweb="input"] input, div[data-baseweb="textarea"] textarea,
-    div[data-baseweb="select"] > div { background-color: #ffffff !important; color: #0f172a !important; }
-    [data-testid="stExpander"] summary p { color: #0f172a !important; }
+    
+    /* Input fields and textareas background, borders, and text colors */
+    div[data-baseweb="input"] {
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 0.375rem !important;
+        background-color: #ffffff !important;
+    }
+    div[data-baseweb="input"] input {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+    }
+    div[data-baseweb="textarea"] {
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 0.375rem !important;
+        background-color: #ffffff !important;
+    }
+    div[data-baseweb="textarea"] textarea {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+    }
+    
+    /* Selectbox/Dropdowns styles */
+    div[data-baseweb="select"] {
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 0.375rem !important;
+        background-color: #ffffff !important;
+    }
+    div[data-baseweb="select"] > div {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+    }
+    
+    /* Style placeholders to be readable dark gray */
+    ::placeholder {
+        color: #64748b !important;
+        opacity: 1 !important;
+    }
+    :-ms-input-placeholder {
+        color: #64748b !important;
+    }
+    ::-ms-input-placeholder {
+        color: #64748b !important;
+    }
+    
+    /* Dropdown option menu lists (rendered in portals at the end of body) */
+    div[data-baseweb="popover"] {
+        background-color: #ffffff !important;
+        border: 1px solid #e2e8f0 !important;
+        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1) !important;
+    }
+    div[data-baseweb="popover"] ul {
+        background-color: #ffffff !important;
+    }
+    div[data-baseweb="popover"] li {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+    }
+    div[data-baseweb="popover"] li:hover {
+        background-color: #f1f5f9 !important;
+        color: #0f172a !important;
+    }
+    div[data-baseweb="popover"] * {
+        color: #0f172a !important;
+    }
+
+    /* Tabs styling */
+    div[data-baseweb="tab-list"] button {
+        color: #475569 !important;
+    }
+    div[data-baseweb="tab-list"] button[aria-selected="true"] {
+        color: #0f172a !important;
+        border-bottom-color: #6366f1 !important;
+    }
+
+    /* Expanders styling */
+    [data-testid="stExpander"] {
+        background-color: #ffffff !important;
+        border: 1px solid #e2e8f0 !important;
+    }
+    [data-testid="stExpander"] details {
+        background-color: #ffffff !important;
+    }
+    [data-testid="stExpander"] summary p {
+        color: #0f172a !important;
+    }
+
+    /* Alerts styling (Info, Success, Warning, Error) */
+    div[data-testid="stAlert"] {
+        border-radius: 0.375rem !important;
+    }
+    div[data-testid="stAlert"] * {
+        color: inherit !important;
+    }
+    div[data-testid="stAlert"][data-test-alerttype="info"] {
+        background-color: #e0f2fe !important;
+        color: #0369a1 !important;
+        border: 1px solid #bae6fd !important;
+    }
+    div[data-testid="stAlert"][data-test-alerttype="success"] {
+        background-color: #dcfce7 !important;
+        color: #15803d !important;
+        border: 1px solid #bbf7d0 !important;
+    }
+    div[data-testid="stAlert"][data-test-alerttype="warning"] {
+        background-color: #fef3c7 !important;
+        color: #b45309 !important;
+        border: 1px solid #fde68a !important;
+    }
+    div[data-testid="stAlert"][data-test-alerttype="error"] {
+        background-color: #fee2e2 !important;
+        color: #b91c1c !important;
+        border: 1px solid #fecaca !important;
+    }
+
+    /* Logs/Code styling */
+    code {
+        background-color: #e2e8f0 !important;
+        color: #0f172a !important;
+    }
+    pre {
+        background-color: #e2e8f0 !important;
+        border: 1px solid #cbd5e1 !important;
+    }
+    pre code {
+        background-color: transparent !important;
+        color: #0f172a !important;
+    }
+
+    /* Primary button text should remain white */
+    [data-testid="stBaseButton-primary"] * {
+        color: #ffffff !important;
+    }
 </style>
 """
 
