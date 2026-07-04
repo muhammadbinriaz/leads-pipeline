@@ -22,3 +22,10 @@ uv.lock
 .DS_Store
 .idea/
 .vscode/
+.aider*
+
+# Build outputs and logs
+*.zip
+*.vsix
+*.log
+claude-out.txt
