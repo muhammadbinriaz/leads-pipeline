@@ -12,8 +12,14 @@ wheels/
 # Secrets and local data
 .env
 .env.*
+!.env.example
 secrets/
 output/
+
+# Node / Next.js
+node_modules/
+frontend/.next/
+frontend/out/
 
 # Lock files (Streamlit Cloud should use requirements.txt)
 uv.lock

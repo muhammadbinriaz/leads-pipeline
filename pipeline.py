@@ -23,7 +23,7 @@ def main():
     print(f"🎯 Target Roles   : {', '.join(titles_list)}")
     print(f"📦 Extract Limit  : {args.limit} leads")
     print(f"📂 Output Folder  : {args.output_dir}")
-    print(f"🛡️ Email Verify   : {'DISABLED' if args.skip_verification else 'ENABLED (Syntax + DNS MX Check)'}")
+    print(f"🛡️ Email Verify   : {'DISABLED' if args.skip_verification else 'ENABLED (Hunter/ZeroBounce, MX fallback)'}")
     print(f"🔔 Slack Alerts   : {'DISABLED' if args.skip_slack else 'ENABLED'}")
     print("-" * 60)
 

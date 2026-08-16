@@ -18,10 +18,16 @@ def reset_llm_cache() -> None:
     _structured_llm = None
 
 
+def groq_available() -> bool:
+    return bool(os.getenv("GROQ_API_KEY", "").strip())
+
+
 def get_llm():
     global _structured_llm
     if _structured_llm is None:
         groq_api_key = os.getenv("GROQ_API_KEY")
+        if not groq_api_key:
+            return None
         llm = ChatGroq(
             temperature=0.2,
             model_name="qwen/qwen3-32b",
@@ -44,15 +50,30 @@ def fallback_icebreaker(name: str, title: str, clean_company: str) -> str:
 def process_lead_with_ai(name: str, title: str, raw_company: str, description: str, max_retries: int = 3) -> CleanedLead:
     """
     Sends raw lead data to Groq to extract clean details and generate icebreakers.
-    Includes rate-limit retry logic and exponential backoff.
+    If GROQ_API_KEY is missing, uses local heuristics so scrape still completes.
     """
+    if not groq_available():
+        clean_company = fallback_clean_company(raw_company)
+        return CleanedLead(
+            clean_company_name=clean_company,
+            industry="B2B Business",
+            personalized_icebreaker=fallback_icebreaker(name, title, clean_company),
+        )
+
     ai_prompt = (
         f"Lead Name: {name} | Job Title: {title} | "
         f"Raw Company Name: {raw_company} | Description: {description}"
     )
-    
+
     structured_llm = get_llm()
-    
+    if structured_llm is None:
+        clean_company = fallback_clean_company(raw_company)
+        return CleanedLead(
+            clean_company_name=clean_company,
+            industry="B2B Business",
+            personalized_icebreaker=fallback_icebreaker(name, title, clean_company),
+        )
+
     for attempt in range(1, max_retries + 1):
         try:
             analysis = structured_llm.invoke(f"Extract and clean this lead info: {ai_prompt}")

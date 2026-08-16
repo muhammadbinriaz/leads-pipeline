@@ -12,8 +12,8 @@ def setup_terminal_encoding():
 
 def load_environment():
     load_dotenv()
-    if not os.getenv("GROQ_API_KEY") or not os.getenv("APIFY_TOKEN"):
-        raise ValueError("❌ Missing GROQ_API_KEY or APIFY_TOKEN in your .env file!")
+    if not os.getenv("APIFY_TOKEN"):
+        raise ValueError("Missing APIFY_TOKEN in your .env file.")
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Automated AI Lead Generation & Enrichment Pipeline")

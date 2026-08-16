@@ -1,16 +1,35 @@
 import os
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
+from src.enricher import fallback_clean_company, reset_llm_cache
+from src.exporter import export_leads_to_csv, leads_to_csv_bytes
+from src.integrations import send_client_completion_email, send_slack_completion_alert
 from src.scraper import scrape_leads
 from src.verifier import verify_lead_email
-from src.enricher import process_lead_with_ai, reset_llm_cache
-from src.integrations import send_slack_completion_alert, send_client_completion_email
-from src.exporter import export_leads_to_csv, leads_to_csv_bytes
 
 
 ProgressCallback = Callable[[str, str, int, int], None]
+
+
+def _first(*values: Any, default: str = "") -> str:
+    for value in values:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text and text.lower() not in {"none", "null", "n/a"}:
+            return text
+    return default
+
+
+def _dict_get(obj: Any, *keys: str) -> Any:
+    if not isinstance(obj, dict):
+        return None
+    for key in keys:
+        if obj.get(key) not in (None, ""):
+            return obj.get(key)
+    return None
 
 
 @dataclass
@@ -22,6 +41,17 @@ class PipelineConfig:
     skip_verification: bool = False
     skip_slack: bool = False
     skip_client_email: bool = False
+    campaign_name: str = ""
+    countries: list[str] = field(default_factory=list)
+    states: list[str] = field(default_factory=list)
+    cities: list[str] = field(default_factory=list)
+    industries: list[str] = field(default_factory=list)
+    company_sizes: list[str] = field(default_factory=list)
+    revenue_bands: list[str] = field(default_factory=list)
+    seniority: list[str] = field(default_factory=list)
+    functions: list[str] = field(default_factory=list)
+    has_email: bool = True
+    has_phone: bool = False
     apify_token: Optional[str] = None
     groq_api_key: Optional[str] = None
     slack_webhook_url: Optional[str] = None
@@ -61,15 +91,124 @@ def _apply_credentials(config: PipelineConfig) -> None:
         os.environ["SLACK_WEBHOOK_URL"] = config.slack_webhook_url.strip()
 
 
-def _extract_lead_fields(lead: dict) -> dict:
-    return {
-        "name": lead.get("name") or lead.get("fullName", "Unknown"),
-        "email": lead.get("email") or lead.get("emailAddress", "No Email Found"),
-        "title": lead.get("title") or lead.get("jobTitle", "No Title"),
-        "raw_company": lead.get("companyName") or lead.get("organizationName", "Unknown Company"),
-        "description": lead.get("companyDescription") or lead.get("orgDescription", "No description available."),
-        "linkedin": lead.get("linkedin") or lead.get("linkedinUrl") or lead.get("personLinkedinUrl") or lead.get("socialUrl", ""),
+def extract_lead_fields(lead: dict) -> dict:
+    organization = lead.get("organization") or lead.get("company") or {}
+    if not isinstance(organization, dict):
+        organization = {}
+
+    first_name = _first(lead.get("firstName"), lead.get("first_name"))
+    last_name = _first(lead.get("lastName"), lead.get("last_name"))
+    full_name = _first(
+        lead.get("name"),
+        lead.get("fullName"),
+        lead.get("full_name"),
+        f"{first_name} {last_name}".strip(),
+        default="Unknown",
+    )
+
+    city = _first(
+        lead.get("city"),
+        lead.get("personCity"),
+        _dict_get(organization, "city"),
+    )
+    state = _first(
+        lead.get("state"),
+        lead.get("personState"),
+        _dict_get(organization, "state"),
+    )
+    country = _first(
+        lead.get("country"),
+        lead.get("personCountry"),
+        lead.get("personLocationCountry"),
+        _dict_get(organization, "country"),
+    )
+    location = ", ".join(part for part in [city, state, country] if part)
+    headquarters = _first(
+        _dict_get(organization, "headquarters", "hq", "rawAddress", "address"),
+        lead.get("companyAddress"),
+        lead.get("headquarters"),
+        location,
+    )
+
+    result = {
+        "name": full_name,
+        "email": _first(lead.get("email"), lead.get("emailAddress"), lead.get("workEmail"), default="No Email Found"),
+        "title": _first(lead.get("title"), lead.get("jobTitle"), lead.get("headline"), default="No Title"),
+        "phone": _first(
+            lead.get("phone"),
+            lead.get("phoneNumber"),
+            lead.get("mobilePhone"),
+            lead.get("directPhone"),
+            lead.get("corporatePhone"),
+        ),
+        "raw_company": _first(
+            lead.get("companyName"),
+            lead.get("organizationName"),
+            lead.get("company"),
+            _dict_get(organization, "name"),
+            default="Unknown Company",
+        ),
+        "website": "",
+        "description": _first(
+            lead.get("companyDescription"),
+            lead.get("orgDescription"),
+            _dict_get(organization, "shortDescription", "description"),
+            default="No description available.",
+        ),
+        "linkedin": _first(
+            lead.get("linkedin"),
+            lead.get("linkedinUrl"),
+            lead.get("personLinkedinUrl"),
+            lead.get("linkedin_url"),
+            lead.get("socialUrl"),
+        ),
+        "company_linkedin": _first(
+            lead.get("companyLinkedin"),
+            lead.get("companyLinkedinUrl"),
+            lead.get("organizationLinkedinUrl"),
+            _dict_get(organization, "linkedinUrl", "linkedin_url"),
+        ),
+        "industry": _first(
+            lead.get("industry"),
+            _dict_get(organization, "industry"),
+        ),
+        "company_size": _first(
+            lead.get("companySize"),
+            lead.get("employees"),
+            lead.get("estimatedNumEmployees"),
+            _dict_get(organization, "estimatedNumEmployees", "employees", "size"),
+        ),
+        "revenue": _first(
+            lead.get("revenue"),
+            lead.get("annualRevenue"),
+            _dict_get(organization, "annualRevenue", "revenue"),
+        ),
+        "headquarters": headquarters,
+        "location": location,
+        "source": _first(lead.get("source"), default="apify"),
     }
+
+    website = _first(
+        lead.get("website"),
+        lead.get("companyWebsite"),
+        lead.get("organizationWebsite"),
+        lead.get("domain"),
+        lead.get("companyDomain"),
+        lead.get("primaryDomain"),
+        _dict_get(organization, "websiteUrl", "website", "primaryDomain", "domain"),
+    )
+    if not website:
+        email = result["email"]
+        if "@" in email and email.lower() != "no email found":
+            domain = email.split("@", 1)[1].strip().lower()
+            if domain and domain not in {"gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com"}:
+                website = domain
+    result["website"] = website
+    return result
+
+
+def _extract_lead_fields(lead: dict) -> dict:
+    return extract_lead_fields(lead)
 
 
 def run_pipeline(
@@ -79,16 +218,30 @@ def run_pipeline(
     result = PipelineResult()
     _apply_credentials(config)
 
-    if not os.getenv("GROQ_API_KEY") or not os.getenv("APIFY_TOKEN"):
-        raise ValueError("Missing GROQ_API_KEY or APIFY_TOKEN. Add your API keys to continue.")
+    if not os.getenv("APIFY_TOKEN"):
+        raise ValueError("Missing APIFY_TOKEN. Add your API key to continue.")
 
     _notify(on_progress, "scrape", f"Scraping up to {config.limit} leads in {config.country}...")
-    raw_leads = scrape_leads(config.country, config.titles, config.limit)
+    raw_leads = scrape_leads(
+        config.country,
+        config.titles,
+        config.limit,
+        countries=config.countries or None,
+        states=config.states or None,
+        cities=config.cities or None,
+        industries=config.industries or None,
+        company_sizes=config.company_sizes or None,
+        revenue_bands=config.revenue_bands or None,
+        seniority=config.seniority or None,
+        functions=config.functions or None,
+        has_email=config.has_email,
+        has_phone=config.has_phone,
+    )
     _notify(on_progress, "scrape", f"Scraped {len(raw_leads)} leads.", len(raw_leads), config.limit)
 
     total = len(raw_leads)
     for idx, lead in enumerate(raw_leads, 1):
-        fields = _extract_lead_fields(lead)
+        fields = extract_lead_fields(lead)
         name = fields["name"]
         _notify(on_progress, "process", f"Processing {name} ({idx}/{total})...", idx, total)
 
@@ -98,21 +251,32 @@ def run_pipeline(
             _notify(on_progress, "verify", f"Verifying email for {name}...", idx, total)
             verify_status, is_valid_email = verify_lead_email(fields["email"])
 
-        _notify(on_progress, "enrich", f"AI enriching {name}...", idx, total)
-        ai_data = process_lead_with_ai(name, fields["title"], fields["raw_company"], fields["description"])
+        clean_company = fallback_clean_company(fields["raw_company"])
+        if clean_company == "Your Company":
+            clean_company = fields["raw_company"]
 
         result.processed_leads.append({
             "Full Name": name,
+            "Title": fields["title"],
             "Email": fields["email"],
             "Verification Status": verify_status,
             "Is Valid Email": is_valid_email,
-            "Title": fields["title"],
-            "Original Company Name": fields["raw_company"],
-            "Cleaned Company Name": ai_data.clean_company_name,
-            "Industry": ai_data.industry,
-            "AI Icebreaker": ai_data.personalized_icebreaker,
-            "Company Description": fields["description"],
+            "Phone": fields["phone"],
+            "Person LinkedIn": fields["linkedin"],
             "LinkedIn URL": fields["linkedin"],
+            "Original Company Name": fields["raw_company"],
+            "Cleaned Company Name": clean_company,
+            "Company Name": clean_company or fields["raw_company"],
+            "Company Website": fields["website"],
+            "Company LinkedIn": fields["company_linkedin"],
+            "Industry": fields["industry"],
+            "Company Size": fields["company_size"],
+            "Revenue": fields["revenue"],
+            "Headquarters": fields["headquarters"],
+            "Location": fields["location"],
+            "Source": fields["source"],
+            "Campaign Name": config.campaign_name,
+            "Company Description": fields["description"],
         })
 
     result.total_leads = len(result.processed_leads)
@@ -125,8 +289,8 @@ def run_pipeline(
         result.csv_path = export_leads_to_csv(result.processed_leads, config.output_dir, config.country, timestamp)
         result.csv_filename = os.path.basename(result.csv_path)
         csv_bytes = leads_to_csv_bytes(result.processed_leads)
-    except Exception as e:
-        result.warnings.append(f"CSV export failed: {e}")
+    except Exception as exc:
+        result.warnings.append(f"CSV export failed: {exc}")
 
     if not config.skip_slack:
         _notify(on_progress, "slack", "Sending Slack notification...")
@@ -140,8 +304,8 @@ def run_pipeline(
                 csv_filename=result.csv_filename,
             )
             result.slack_sent = True
-        except Exception as e:
-            result.warnings.append(f"Slack alert failed: {e}")
+        except Exception as exc:
+            result.warnings.append(f"Slack alert failed: {exc}")
 
     if not config.skip_client_email and config.client_email and csv_bytes and result.csv_filename:
         _notify(on_progress, "email", f"Sending completion email to {config.client_email}...")
@@ -162,8 +326,8 @@ def run_pipeline(
                 smtp_from=config.smtp_from,
             )
             result.email_sent = True
-        except Exception as e:
-            result.warnings.append(f"Client email failed: {e}")
+        except Exception as exc:
+            result.warnings.append(f"Client email failed: {exc}")
 
     _notify(on_progress, "done", "Pipeline complete.", result.total_leads, result.total_leads)
     return result
